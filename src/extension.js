@@ -413,8 +413,8 @@ class DartClass {
 
 class Imports {
     /**
-	 * @param {string} text
-	 */
+     * @param {string} text
+     */
     constructor(text) {
         /** @type {string[]} */
         this.values = [];
@@ -477,7 +477,7 @@ class Imports {
             } else {
                 const isLicenseComment = line.startsWith('//') && this.values.length == 0;
                 const didEnd = !(isBlank(line) || line.startsWith('library') || isLicenseComment);
-                
+
                 if (isLast || didEnd) {
                     if (this.startAtLine != null) {
                         if (i > 0 && isBlank(lines[i - 1])) {
@@ -568,8 +568,8 @@ class Imports {
     }
 
     /**
-	 * @param {string[]} imps
-	 */
+     * @param {string[]} imps
+     */
     hastAtLeastOneImport(imps) {
         for (let imp of imps) {
             const impt = `import '${imp}';`;
@@ -593,13 +593,13 @@ class Imports {
 }
 
 class ClassField {
-	/**
-	 * @param {String} type
-	 * @param {String} name
-	 * @param {number} line
-	 * @param {boolean} isFinal
-	 * @param {boolean} isConst
-	 */
+    /**
+     * @param {String} type
+     * @param {String} name
+     * @param {number} line
+     * @param {boolean} isFinal
+     * @param {boolean} isConst
+     */
     constructor(type, name, line = 1, isFinal = true, isConst = false) {
         this.type = type;
         this.jsonName = name;
@@ -609,6 +609,14 @@ class ClassField {
         this.isConst = isConst;
         this.isEnum = false;
         this.isCollectionType = (type) => this.type == type || this.type.startsWith(type + '<');
+    }
+
+    get clazz() {
+        return this.isNullable ? removeEnd(this.type, '?') : this.type;
+    }
+
+    get isNullable() {
+        return this.type.endsWith('?');
     }
 
     get isList() {
@@ -761,7 +769,7 @@ class DataClassGenerator {
                 if (readSetting('toString.enabled') && this.isPartSelected('toString'))
                     this.insertToString(clazz);
 
-                if ((clazz.usesEquatable ||readSetting('useEquatable')) && this.isPartSelected('useEquatable')) {
+                if ((clazz.usesEquatable || readSetting('useEquatable')) && this.isPartSelected('useEquatable')) {
                     this.insertEquatable(clazz);
                 } else {
                     if (readSetting('equality.enabled') && this.isPartSelected('equality'))
@@ -913,9 +921,9 @@ class DataClassGenerator {
         return oldProperties;
     }
 
-	/**
-	 * @param {DartClass} clazz
-	 */
+    /**
+     * @param {DartClass} clazz
+     */
     insertConstructor(clazz) {
         const defVal = readSetting('constructor.default_values');
         let required = readSetting('constructor.required');
@@ -1027,16 +1035,16 @@ class DataClassGenerator {
         }
     }
 
-	/**
-	 * @param {DartClass} clazz
-	 */
+    /**
+     * @param {DartClass} clazz
+     */
     insertCopyWith(clazz) {
         let method = clazz.type + ' copyWith({\n';
-        for (let p of clazz.properties) {
-            method += '  ' + p.type + ' ' + p.name + ',\n';
+        for (const prop of clazz.properties) {
+            method += `  ${prop.clazz}? ${prop.name},\n`;
         }
         method += '}) {\n';
-        method += '  return ' + clazz.type + '(\n';
+        method += `  return ${clazz.type}(\n`;
 
         for (let p of clazz.properties) {
             method += `    ${clazz.hasNamedConstructor ? `${p.name}: ` : ''}${p.name} ?? this.${p.name},\n`;
@@ -1048,9 +1056,9 @@ class DataClassGenerator {
         this.appendOrReplace('copyWith', method, `${clazz.name} copyWith(`, clazz);
     }
 
-	/**
-	 * @param {DartClass} clazz
-	 */
+    /**
+     * @param {DartClass} clazz
+     */
     insertToMap(clazz) {
         let props = clazz.properties;
         /**
@@ -1096,9 +1104,9 @@ class DataClassGenerator {
         this.appendOrReplace('toMap', method, 'Map<String, dynamic> toMap()', clazz);
     }
 
-	/**
-	 * @param {DartClass} clazz
-	 */
+    /**
+     * @param {DartClass} clazz
+     */
     insertFromMap(clazz) {
         let defVal = readSetting('fromMap.default_values');
         let props = clazz.properties;
@@ -1113,7 +1121,7 @@ class DataClassGenerator {
             const endFlag = value == null ? ',\n' : '';
             value = value == null ? "map['" + prop.jsonName + "']" : value;
 
-            switch (prop.type) {
+            switch (prop.clazz) {
                 case 'DateTime':
                     return `DateTime.fromMillisecondsSinceEpoch(${value})${endFlag}`;
                 case 'Color':
@@ -1121,12 +1129,11 @@ class DataClassGenerator {
                 case 'IconData':
                     return `IconData(${value}, fontFamily: 'MaterialIcons')${endFlag}`
                 default:
-                    return `${!prop.isPrimitive ? prop.type + '.fromMap(' : ''}${value}${!prop.isPrimitive ? ')' : ''}${fromJSON ? (prop.isDouble ? '?.toDouble()' : prop.isInt ? '?.toInt()' : '') : ''}${addDefault ? ` ?? ${prop.defValue}` : ''}${endFlag}`;
+                    return `${!prop.isPrimitive ? prop.clazz + '.fromMap(' : ''}${value}${!prop.isPrimitive ? ')' : ''}${fromJSON ? (prop.isDouble ? '?.toDouble()' : prop.isInt ? '?.toInt()' : '') : ''}${addDefault ? ` ?? ${prop.defValue}` : ''}${endFlag}`;
             }
         }
 
         let method = `factory ${clazz.name}.fromMap(Map<String, dynamic> map) {\n`;
-        method += '  if (map == null) return null;\n\n';
         method += '  return ' + clazz.type + '(\n';
         for (let p of props) {
             method += `    ${clazz.hasNamedConstructor ? `${p.name}: ` : ''}`;
@@ -1138,7 +1145,7 @@ class DataClassGenerator {
             } else if (p.isCollection) {
                 const defaultValue = defVal ? ` ?? const ${p.isList ? '[]' : '{}'}` : '';
 
-                method += `${p.type}.from(`;
+                method += `${p.clazz}.from(`;
                 if (p.isPrimitive) {
                     method += `${value}${defaultValue}),\n`;
                 } else {
@@ -1156,9 +1163,9 @@ class DataClassGenerator {
         this.appendOrReplace('fromMap', method, `factory ${clazz.name}.fromMap(Map<String, dynamic> map)`, clazz);
     }
 
-	/**
-	 * @param {DartClass} clazz
-	 */
+    /**
+     * @param {DartClass} clazz
+     */
     insertToJson(clazz) {
         this.requiresImport('dart:convert');
 
@@ -1166,9 +1173,9 @@ class DataClassGenerator {
         this.appendOrReplace('toJson', method, 'String toJson()', clazz);
     }
 
-	/**
-	 * @param {DartClass} clazz
-	 */
+    /**
+     * @param {DartClass} clazz
+     */
     insertFromJson(clazz) {
         this.requiresImport('dart:convert');
 
@@ -1176,9 +1183,9 @@ class DataClassGenerator {
         this.appendOrReplace('fromJson', method, `factory ${clazz.name}.fromJson(String source)`, clazz);
     }
 
-	/**
-	 * @param {DartClass} clazz
-	 */
+    /**
+     * @param {DartClass} clazz
+     */
     insertToString(clazz) {
         if (clazz.usesEquatable || readSetting('useEquatable')) {
             let stringify = '@override\n';
@@ -1212,9 +1219,9 @@ class DataClassGenerator {
         }
     }
 
-	/**
-	 * @param {DartClass} clazz
-	 */
+    /**
+     * @param {DartClass} clazz
+     */
     insertEquality(clazz) {
         const props = clazz.properties;
         const hasCollection = props.find((p) => p.isCollection) != undefined;
@@ -1260,9 +1267,9 @@ class DataClassGenerator {
         this.appendOrReplace('equality', method, 'bool operator ==', clazz);
     }
 
-	/**
-	 * @param {DartClass} clazz
-	 */
+    /**
+     * @param {DartClass} clazz
+     */
     insertHash(clazz) {
         const useJenkins = readSetting('hashCode.use_jenkins');
         const short = !useJenkins && clazz.fewProps;
@@ -1321,8 +1328,8 @@ class DataClassGenerator {
     }
 
     /**
-	 * @param {DartClass} clazz
-	 */
+     * @param {DartClass} clazz
+     */
     insertEquatable(clazz) {
         this.addEquatableDetails(clazz);
 
@@ -1394,10 +1401,10 @@ class DataClassGenerator {
         }
     }
 
-	/**
-	 * @param {string} method
-	 * @param {DartClass} clazz
-	 */
+    /**
+     * @param {string} method
+     * @param {DartClass} clazz
+     */
     append(method, clazz, constr = false) {
         let met = indent(method);
         constr ? clazz.constr = met : clazz.toInsert += '\n' + met;
@@ -1653,10 +1660,10 @@ class DataClassGenerator {
 }
 
 class DartFile {
-	/**
-	 * @param {DartClass} clazz
-	 * @param {string} content
-	 */
+    /**
+     * @param {DartClass} clazz
+     * @param {string} content
+     */
     constructor(clazz, content = null) {
         this.clazz = clazz;
         this.name = createFileName(clazz.name);
@@ -1665,10 +1672,10 @@ class DartFile {
 }
 
 class JsonReader {
-	/**
-	 * @param {string} source
-	 * @param {string} className
-	 */
+    /**
+     * @param {string} source
+     * @param {string} className
+     */
     constructor(source, className) {
         this.json = this.toPlainJson(source);
 
@@ -1694,16 +1701,16 @@ class JsonReader {
         return null;
     }
 
-	/**
-	 * @param {string} source
-	 */
+    /**
+     * @param {string} source
+     */
     toPlainJson(source) {
         return source.replace(new RegExp(' ', 'g'), '').replace(new RegExp('\n', 'g'), '');
     }
 
-	/**
-	 * @param {any} value
-	 */
+    /**
+     * @param {any} value
+     */
     getPrimitive(value) {
         let type = typeof (value);
         let sType = null;
@@ -1719,13 +1726,13 @@ class JsonReader {
         return sType;
     }
 
-	/**
-	 * Create DartClasses from a JSON mapping with class content and properties.
-	 * This is intended only for creating new files not overriding exisiting ones.
-	 * 
-	 * @param {any} object
-	 * @param {string} key
-	 */
+    /**
+     * Create DartClasses from a JSON mapping with class content and properties.
+     * This is intended only for creating new files not overriding exisiting ones.
+     * 
+     * @param {any} object
+     * @param {string} key
+     */
     getClazzes(object, key) {
         let clazz = new DartClass();
         clazz.startsAtLine = 1;
@@ -1785,9 +1792,9 @@ class JsonReader {
         clazz.classContent += '}';
     }
 
-	/**
-	 * @param {string} property
-	 */
+    /**
+     * @param {string} property
+     */
     getGeneratedTypeCount(property) {
         let p = new ClassField(property, 'x');
         let i = 0;
@@ -1833,9 +1840,9 @@ class JsonReader {
         this.clazzes = result;
     }
 
-	/**
-	 * @param {DataClassGenerator} generator
-	 */
+    /**
+     * @param {DataClassGenerator} generator
+     */
     addGeneratedFilesAsImport(generator) {
         const clazz = generator.clazzes[0];
         for (let prop of clazz.properties) {
@@ -1849,10 +1856,10 @@ class JsonReader {
         }
     }
 
-	/**
-	 * @param {vscode.Progress} progress
-	 * @param {boolean} seperate
-	 */
+    /**
+     * @param {vscode.Progress} progress
+     * @param {boolean} seperate
+     */
     async commitJson(progress, seperate) {
         let path = getCurrentPath();
         let fileContent = '';
@@ -2303,9 +2310,9 @@ function toVarName(source) {
     let s = source;
     let r = '';
 
-	/**
-	 * @param {string} char
-	 */
+    /**
+     * @param {string} char
+     */
     let replace = (char) => {
         if (s.includes(char)) {
             const splits = s.split(char);
@@ -2608,8 +2615,6 @@ function showError(msg) {
 function showInfo(msg) {
     vscode.window.showInformationMessage(msg);
 }
-
-exports.activate = activate;
 
 function deactivate() { }
 

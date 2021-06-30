@@ -601,22 +601,22 @@ class ClassField {
      * @param {boolean} isConst
      */
     constructor(type, name, line = 1, isFinal = true, isConst = false) {
-        this.type = type;
+        this.rawType = type;
         this.jsonName = name;
         this.name = toVarName(name);
         this.line = line;
         this.isFinal = isFinal;
         this.isConst = isConst;
         this.isEnum = false;
-        this.isCollectionType = (type) => this.type == type || this.type.startsWith(type + '<');
+        this.isCollectionType = (type) => this.rawType == type || this.rawType.startsWith(type + '<');
     }
 
-    get clazz() {
-        return this.isNullable ? removeEnd(this.type, '?') : this.type;
+    get type() {
+        return this.isNullable ? removeEnd(this.rawType, '?') : this.rawType;
     }
 
     get isNullable() {
-        return this.type.endsWith('?');
+        return this.rawType.endsWith('?');
     }
 
     get isList() {
@@ -638,7 +638,7 @@ class ClassField {
     get listType() {
         if (this.isList || this.isSet) {
             const collection = this.isSet ? 'Set' : 'List';
-            const type = this.type == collection ? 'dynamic' : this.type.replace(collection + '<', '').replace('>', '');
+            const type = this.rawType == collection ? 'dynamic' : this.rawType.replace(collection + '<', '').replace('>', '');
             return new ClassField(type, this.name, this.line, this.isFinal);
         }
 
@@ -891,7 +891,7 @@ class DataClassGenerator {
         let oldArguments = oldConstr.split('\n');
         const oldProperties = [];
         for (let arg of oldArguments) {
-            let formatted = arg.replace('@required', '').trim();
+            let formatted = arg.replace('required', '').trim();
             if (formatted.indexOf('=') != -1) {
                 formatted = formatted.substring(0, formatted.indexOf('=')).trim();
             }
@@ -925,20 +925,11 @@ class DataClassGenerator {
      * @param {DartClass} clazz
      */
     insertConstructor(clazz) {
-        const defVal = readSetting('constructor.default_values');
-        let required = readSetting('constructor.required');
+        const withDefaults = readSetting('constructor.default_values');
+
         let constr = '';
         let startBracket = '({';
         let endBracket = '})';
-
-        if (required) {
-            this.requiresImport('package:meta/meta.dart', [
-                'package:flutter/material.dart',
-                'package:flutter/cupertino.dart',
-                'package:flutter/widgets.dart',
-                'package:flutter/foundation.dart'
-            ]);
-        }
 
         if (clazz.constr != null) {
             if (clazz.constr.trimLeft().startsWith('const'))
@@ -959,9 +950,6 @@ class DataClassGenerator {
                 constr += 'const ';
         }
 
-        // Only add @required when using named constructors.
-        required = required && startBracket == '({' && endBracket == '})';
-
         constr += clazz.name + startBracket + '\n';
 
         // Add 'Key key,' for widgets in constructor.
@@ -969,14 +957,14 @@ class DataClassGenerator {
             let hasKey = false;
             let clazzConstr = clazz.constr || '';
             for (let line of clazzConstr.split('\n')) {
-                if (line.trim().startsWith('Key key')) {
+                if (line.trim().startsWith('Key? key')) {
                     hasKey = true;
                     break;
                 }
             }
 
             if (!hasKey)
-                constr += '  Key key,\n';
+                constr += '  Key? key,\n';
         }
 
         const oldProperties = this.findOldConstrProperties(clazz);
@@ -995,13 +983,24 @@ class DataClassGenerator {
                 continue;
             }
 
-            let parameter = `this.${prop.name}`
-            const addDefault = endBracket != ')' && defVal && !required && ((prop.isPrimitive || prop.isCollection) && prop.type != 'dynamic');
+            const parameter = `this.${prop.name}`
 
             constr += '  ';
-            if (required) parameter = '@required ' + parameter;
-            constr += `${parameter}${addDefault ? ` = ${prop.defValue}` : ''}` + ',';
-            constr += '\n';
+
+            if (!prop.isNullable) {
+                const hasDefault = withDefaults && ((prop.isPrimitive || prop.isCollection) && prop.rawType != 'dynamic');
+                const isNamedConstr = startBracket == '({' && endBracket == '})';
+
+                if (hasDefault) {
+                    constr += `${parameter} = ${prop.defValue},\n`;
+                } else if (isNamedConstr) {
+                    constr += `required ${parameter},\n`;
+                } else {
+                    constr += `${parameter},\n`;
+                }
+            } else {
+                constr += `${parameter},\n`;
+            }
         }
 
         const stdConstrEnd = () => {
@@ -1041,7 +1040,7 @@ class DataClassGenerator {
     insertCopyWith(clazz) {
         let method = clazz.type + ' copyWith({\n';
         for (const prop of clazz.properties) {
-            method += `  ${prop.clazz}? ${prop.name},\n`;
+            method += `  ${prop.type}? ${prop.name},\n`;
         }
         method += '}) {\n';
         method += `  return ${clazz.type}(\n`;
@@ -1068,15 +1067,17 @@ class DataClassGenerator {
             prop = prop.isCollection ? prop.listType : prop;
             name = name == null ? prop.name : name;
 
-            switch (prop.type) {
+            const nullSafe = prop.isNullable ? '?' : '';
+
+            switch (prop.rawType) {
                 case 'DateTime':
-                    return `${name}?.millisecondsSinceEpoch${endFlag}`;
+                    return `${name}${nullSafe}.millisecondsSinceEpoch${endFlag}`;
                 case 'Color':
-                    return `${name}?.value${endFlag}`;
+                    return `${name}${nullSafe}.value${endFlag}`;
                 case 'IconData':
-                    return `${name}?.codePoint${endFlag}`
+                    return `${name}${nullSafe}.codePoint${endFlag}`
                 default:
-                    return `${name}${!prop.isPrimitive ? '?.toMap()' : ''}${endFlag}`;
+                    return `${name}${!prop.isPrimitive ? `${nullSafe}.toMap()` : ''}${endFlag}`;
             }
         }
 
@@ -1108,7 +1109,7 @@ class DataClassGenerator {
      * @param {DartClass} clazz
      */
     insertFromMap(clazz) {
-        let defVal = readSetting('fromMap.default_values');
+        let withDefaultValues = readSetting('fromMap.default_values');
         let props = clazz.properties;
         const fromJSON = this.fromJSON;
 
@@ -1117,11 +1118,11 @@ class DataClassGenerator {
          */
         function customTypeMapping(prop, value = null) {
             prop = prop.isCollection ? prop.listType : prop;
-            const addDefault = defVal && prop.type != 'dynamic';
+            const addDefault = withDefaultValues && prop.rawType != 'dynamic';
             const endFlag = value == null ? ',\n' : '';
             value = value == null ? "map['" + prop.jsonName + "']" : value;
 
-            switch (prop.clazz) {
+            switch (prop.type) {
                 case 'DateTime':
                     return `DateTime.fromMillisecondsSinceEpoch(${value})${endFlag}`;
                 case 'Color':
@@ -1129,7 +1130,7 @@ class DataClassGenerator {
                 case 'IconData':
                     return `IconData(${value}, fontFamily: 'MaterialIcons')${endFlag}`
                 default:
-                    return `${!prop.isPrimitive ? prop.clazz + '.fromMap(' : ''}${value}${!prop.isPrimitive ? ')' : ''}${fromJSON ? (prop.isDouble ? '?.toDouble()' : prop.isInt ? '?.toInt()' : '') : ''}${addDefault ? ` ?? ${prop.defValue}` : ''}${endFlag}`;
+                    return `${!prop.isPrimitive ? prop.type + '.fromMap(' : ''}${value}${!prop.isPrimitive ? ')' : ''}${fromJSON ? (prop.isDouble ? '?.toDouble()' : prop.isInt ? '?.toInt()' : '') : ''}${addDefault && !prop.isNullable ? ` ?? ${prop.defValue}` : ''}${endFlag}`;
             }
         }
 
@@ -1140,12 +1141,12 @@ class DataClassGenerator {
 
             const value = `map['${p.jsonName}']`;
             if (p.isEnum) {
-                const defaultValue = defVal ? ' ?? 0' : '';
-                method += `${p.type}.values[${value}${defaultValue}],\n`;
+                const defaultValue = withDefaultValues ? ' ?? 0' : '';
+                method += `${p.rawType}.values[${value}${defaultValue}],\n`;
             } else if (p.isCollection) {
-                const defaultValue = defVal ? ` ?? const ${p.isList ? '[]' : '{}'}` : '';
+                const defaultValue = withDefaultValues ? ` ?? const ${p.isList ? '[]' : '{}'}` : '';
 
-                method += `${p.clazz}.from(`;
+                method += `${p.type}.from(`;
                 if (p.isPrimitive) {
                     method += `${value}${defaultValue}),\n`;
                 } else {
@@ -1800,7 +1801,7 @@ class JsonReader {
         let i = 0;
         if (!p.isPrimitive) {
             for (let clazz of this.clazzes) {
-                if (clazz.name == p.type) {
+                if (clazz.name == p.rawType) {
                     i++;
                 }
             }
@@ -1849,8 +1850,8 @@ class JsonReader {
             // Import only inambigous generated types.
             // E.g. if there are multiple generated classes with
             // the same name, do not include an import of that class.
-            if (this.getGeneratedTypeCount(prop.listType.type) == 1) {
-                const imp = `import '${createFileName(prop.listType.type)}.dart';`;
+            if (this.getGeneratedTypeCount(prop.listType.rawType) == 1) {
+                const imp = `import '${createFileName(prop.listType.rawType)}.dart';`;
                 generator.imports.push(imp);
             }
         }
@@ -1951,7 +1952,6 @@ class DataClassCodeActions {
         // * Class independent code actions.
         const codeActions = [
             this.createImportsFix(),
-            this.createRequiredFix(),
         ];
 
         if (this.clazz == null || !this.clazz.isValid) {
@@ -2071,89 +2071,6 @@ class DataClassCodeActions {
 
     createUseEquatableFix() {
         return this.constructQuickFix('useEquatable', `Generate Equatable`);
-    }
-
-    createRequiredFix() {
-        if (this.line.trim().length == 0) return;
-
-        const includes = (match) => this.line.includes(match);
-
-        const isClass = this.clazz != null;
-        const content = isClass ? this.clazz.classContent : this.document.getText();
-        const lines = content.split('\n');
-
-        const line = this.lineNumber;
-        let column = this.charPos;
-        let singleLine = true;
-
-        // Find the curly braces that are included in a bracket like (this.field, **{this.field2}**)
-        const src = isClass ? lines.slice(1, lines.length - 1).join('\n') : content;
-        const curlies = src.match(/(?<=\([\w, \s, \,, \., <, >]*)(\{.*?\})(?=[\w, \s]*\))/gs);
-        if (curlies == null) return;
-
-        let curly = curlies.find((curly) => {
-            if (includes(curly)) return true;
-            if (curly.includes(this.line)) {
-                singleLine = false;
-                return true;
-            }
-        });
-        if (curly == null || curly === undefined) return;
-
-        if (singleLine) {
-            curly = removeStart(curly, '{');
-            curly = removeEnd(curly, '}');
-        } else {
-            curly = this.line;
-        }
-
-        if (column < 0) return;
-
-        let parameter;
-        let parameterStartIndex = -1;
-        if (singleLine) {
-            const parameters = curly.split(',');
-            parameter = parameters.find((parameter) => {
-                parameter = parameter.trim();
-                if (parameter.length == 0) return false;
-
-                parameterStartIndex = this.line.indexOf(curly.trim()) + curly.trim().indexOf(parameter);
-
-                return parameterStartIndex <= column && parameterStartIndex + parameter.length >= column;
-            });
-        } else {
-            parameter = curly.trim();
-            parameterStartIndex = curly.indexOf(parameter);
-        }
-
-        if (parameter == null || parameter === undefined || parameterStartIndex < 0) return;
-
-        if (!includesOne(parameter, ['@required', '='])) {
-            const imports = new Imports(this.document.getText());
-            const hasImports = imports.hasImports;
-            imports.requiresImport('package:meta/meta.dart', [
-                'package:flutter/material.dart',
-                'package:flutter/cupertino.dart',
-                'package:flutter/widgets.dart',
-                'package:flutter/foundation.dart'
-            ]);
-
-            return this.createFix('Annotate with @required', (edit) => {
-                edit.insert(
-                    this.uri,
-                    new vscode.Position(line - 1, parameterStartIndex),
-                    '@required ',
-                );
-
-                if (imports.didChange) {
-                    if (hasImports) {
-                        edit.replace(this.uri, imports.range, imports.formatted);
-                    } else {
-                        edit.insert(this.uri, new vscode.Position(imports.startAtLine, 0), imports.formatted + '\n');
-                    }
-                }
-            });
-        }
     }
 
     createImportsFix() {

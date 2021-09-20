@@ -1120,7 +1120,7 @@ class DataClassGenerator {
             prop = prop.isCollection ? prop.listType : prop;
             const addDefault = withDefaultValues && prop.rawType != 'dynamic';
             const endFlag = value == null ? ',\n' : '';
-            value = value == null ? "map['" + prop.jsonName + "']" : value;
+            value = value == null ? "map['" + prop.jsonName + "'] != null ? map['" + prop.jsonName + "'] : null" : value;
 
             switch (prop.type) {
                 case 'DateTime':

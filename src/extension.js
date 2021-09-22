@@ -1120,11 +1120,11 @@ class DataClassGenerator {
             prop = prop.isCollection ? prop.listType : prop;
             const addDefault = withDefaultValues && prop.rawType != 'dynamic';
             const endFlag = value == null ? ',\n' : '';
-            value = value == null ? "map['" + prop.jsonName + "'] != null ? map['" + prop.jsonName + "'] : null" : value;
+            value = value == null ? "map['" + prop.jsonName + "']" : value;
 
             switch (prop.type) {
                 case 'DateTime':
-                    return `DateTime.fromMillisecondsSinceEpoch(${value})${endFlag}`;
+                    return `DateTime.tryParse(${value})${endFlag}`;
                 case 'Color':
                     return `Color(${value})${endFlag}`;
                 case 'IconData':
@@ -1157,7 +1157,7 @@ class DataClassGenerator {
             }
 
             const isLast = p.name == props[props.length - 1].name;
-            if (isLast) method += '  );\n';
+            if (isLast) `${value} != null ? ${method} : null` += '  );\n';
         }
         method += '}';
 
